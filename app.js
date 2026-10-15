@@ -4,7 +4,6 @@
 
 const COLORS = ['#FC4C02', '#1F77B4', '#2CA02C', '#9467BD', '#D62728', '#17BECF', '#8C564B', '#E377C2', '#BCBD22', '#7F7F7F'];
 const SPEEDS = [1, 5, 10, 30, 60, 120, 300, 600];
-const TAIL_SECONDS = 90;
 const METRICS = ['hr', 'cad', 'pwr']; // optional sensor channels kept per sample
 const EXAMPLES = [
   { name: '西進武嶺', files: ['西進武嶺2023.fit', '西進武嶺2024-1.fit', '西進武嶺2024-2.fit', '西進武嶺2025.fit', '西進武嶺2026.fit'] },
@@ -402,10 +401,10 @@ const escapeHtml = s => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;',
 
 // ---------- map ----------
 let map = null;
-// Full tracks (canvas) and the moving markers/tails (SVG) use separate renderers, so
+// Full tracks (canvas) and the moving markers (SVG) use separate renderers, so
 // moving a marker only repaints the marker's own small area, not every full track.
 let trackRenderer = null, liveRenderer = null;
-const layers = new Map(); // id -> { line, tail, marker, status }
+const layers = new Map(); // id -> { line, marker, status }
 
 function initMap() {
   if (typeof L === 'undefined') {
@@ -424,7 +423,7 @@ function initMap() {
 
 function rebuildLayers() {
   if (!map) return;
-  for (const l of layers.values()) { l.line.remove(); l.tail.remove(); l.marker.remove(); }
+  for (const l of layers.values()) { l.line.remove(); l.marker.remove(); }
   layers.clear();
   const bounds = [];
   for (const a of state.acts) {
@@ -432,11 +431,10 @@ function rebuildLayers() {
     const step = Math.max(1, Math.floor(a.n / 4000));
     for (let i = 0; i < a.n; i += step) latlngs.push([a.lat[i], a.lon[i]]);
     const line = L.polyline(latlngs, { color: a.color, weight: 3, opacity: 0.35, renderer: trackRenderer });
-    const tail = L.polyline([], { color: a.color, weight: 5, opacity: 0.9, renderer: liveRenderer });
     const marker = L.circleMarker([a.lat[0], a.lon[0]], { radius: 8, color: '#fff', weight: 2, fillColor: a.color, fillOpacity: 1, renderer: liveRenderer })
       .bindTooltip(escapeHtml(a.name));
-    if (a.visible) { line.addTo(map); tail.addTo(map); marker.addTo(map); latlngs.forEach(p => bounds.push(p)); }
-    layers.set(a.id, { line, tail, marker, status: null });
+    if (a.visible) { line.addTo(map); marker.addTo(map); latlngs.forEach(p => bounds.push(p)); }
+    layers.set(a.id, { line, marker, status: null });
   }
   if (bounds.length) map.fitBounds(bounds, { padding: [30, 30], animate: false });
 }
@@ -451,11 +449,6 @@ function updateMap() {
     const s = sampleAt(a, e);
     l.marker.setLatLng([s.lat, s.lon]);
     if (l.status !== s.status) { l.status = s.status; l.marker.setStyle({ fillOpacity: s.status === 'riding' ? 1 : 0.4 }); }
-    const from = lowerIndex(a.t, Math.max(a.t0, e - TAIL_SECONDS)), to = lowerIndex(a.t, Math.min(Math.max(e, a.t0), a.t1));
-    const tail = [];
-    for (let i = from; i <= to; i++) tail.push([a.lat[i], a.lon[i]]);
-    tail.push([s.lat, s.lon]);
-    l.tail.setLatLngs(e > 0 ? tail : []);
     if (s.rd > leadD) { leadD = s.rd; leader = s; }
   }
   // Re-centre only when the leader nears the edge: panning every frame forces the
@@ -904,7 +897,7 @@ function fullRefresh(keepView) {
   if (!keepView || layers.size !== state.acts.length) rebuildLayers();
   else for (const a of state.acts) {
     const l = layers.get(a.id);
-    for (const layer of [l.line, l.tail, l.marker]) a.visible ? layer.addTo(map) : layer.remove();
+    for (const layer of [l.line, l.marker]) a.visible ? layer.addTo(map) : layer.remove();
   }
   render();
 }
