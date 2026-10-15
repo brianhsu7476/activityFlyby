@@ -1,5 +1,6 @@
 // Activity file parsers: GPX, TCX, FIT (optionally .gz compressed).
-// Every parser returns { name, points: [{ time (ms epoch), lat, lon, ele, dist (m or null) }] }.
+// Every parser returns { name, points: [{ time (ms epoch), lat, lon, ele, dist (m or null),
+//   hr (bpm), cad (rpm), pwr (W) — each null when not recorded }] }.
 
 const FIT_EPOCH_MS = 631065600 * 1000; // 1989-12-31T00:00:00Z
 const SEMI_TO_DEG = 180 / 2 ** 31;
@@ -44,6 +45,18 @@ function childText(el, localName) {
   return null;
 }
 
+// first descendant (any namespace) whose local name is one of `names`, as a number
+function descNumber(el, names) {
+  if (!el) return null;
+  for (const c of el.getElementsByTagName('*')) {
+    if (names.includes(c.localName.toLowerCase())) {
+      const v = parseFloat(c.textContent);
+      return Number.isFinite(v) ? v : null;
+    }
+  }
+  return null;
+}
+
 function parseGpx(text) {
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   if (doc.getElementsByTagName('parsererror').length) throw new Error('GPX 格式錯誤');
@@ -53,12 +66,16 @@ function parseGpx(text) {
   for (const n of nodes) {
     const time = childText(n, 'time');
     const ele = childText(n, 'ele');
+    const ext = [...n.children].find(c => c.localName === 'extensions');
     pts.push({
       time: time ? Date.parse(time) : NaN,
       lat: parseFloat(n.getAttribute('lat')),
       lon: parseFloat(n.getAttribute('lon')),
       ele: ele !== null ? parseFloat(ele) : null,
       dist: null,
+      hr: descNumber(ext, ['hr', 'heartrate']),
+      cad: descNumber(ext, ['cad', 'cadence']),
+      pwr: descNumber(ext, ['power', 'watts']),
     });
   }
   return pts;
@@ -73,12 +90,18 @@ function parseTcx(text) {
     if (!pos) continue;
     const ele = childText(tp, 'AltitudeMeters');
     const dist = childText(tp, 'DistanceMeters');
+    const cad = childText(tp, 'Cadence');
+    const hrEl = [...tp.children].find(c => c.localName === 'HeartRateBpm');
+    const ext = [...tp.children].find(c => c.localName === 'Extensions');
     pts.push({
       time: Date.parse(childText(tp, 'Time')),
       lat: parseFloat(childText(pos, 'LatitudeDegrees')),
       lon: parseFloat(childText(pos, 'LongitudeDegrees')),
       ele: ele !== null ? parseFloat(ele) : null,
       dist: dist !== null ? parseFloat(dist) : null,
+      hr: descNumber(hrEl, ['value']),
+      cad: cad !== null ? parseFloat(cad) : descNumber(ext, ['runcadence']),
+      pwr: descNumber(ext, ['watts']),
     });
   }
   return pts;
@@ -177,6 +200,9 @@ function decodeFitRecords(dv, pos, end, pts) {
       lon: vals[1] * SEMI_TO_DEG,
       ele: alt,
       dist: vals[5] != null ? vals[5] / 100 : null,
+      hr: vals[3],
+      cad: vals[4],
+      pwr: vals[7],
     });
   }
 }

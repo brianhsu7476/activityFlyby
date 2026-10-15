@@ -31,7 +31,7 @@
       <h2>自動對齊</h2>
       <select id="mode">
         <option value="point">對齊共同起點（同一路線、不同天）</option>
-        <option value="start">同時按下開始（各自的起點）</option>
+        <option value="start">同時出發（各自的起點）</option>
         <option value="clock">實際時間（同一場團騎）</option>
       </select>
       <label class="row">參考活動
@@ -51,16 +51,17 @@
   <main>
     <div class="map-wrap">
       <div id="map"></div>
-      <div id="board" class="board"></div>
     </div>
     <div class="controls">
       <button id="play" class="primary">▶ 播放</button>
       <input id="time" type="range" min="0" max="0" step="1" value="0">
       <span id="timeLabel" class="time-label">0:00</span>
       <select id="speed" title="播放速度"></select>
+      <label class="check" title="地圖平滑移動並縮放，讓所有人都在畫面內；拖曳或滾輪縮放地圖會關閉"><input id="spectate" type="checkbox"> 觀賽模式</label>
       <label class="check"><input id="follow" type="checkbox"> 跟隨領先者</label>
       <button id="fit" class="small">縮放到全部路線</button>
     </div>
+    <div id="board" class="board"></div>
     <div class="charts">
       <canvas id="gapChart"></canvas>
       <canvas id="eleChart"></canvas>
