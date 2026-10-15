@@ -58,6 +58,11 @@ button.icon { border: none; background: none; padding: 0 4px; color: var(--muted
 .map-wrap { position: relative; height: 56vh; min-height: 320px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); }
 #map { position: absolute; inset: 0; background: var(--panel); }
 .map-error { padding: 20px; color: var(--muted); }
+.minimap { position: absolute; left: 10px; bottom: 10px; z-index: 500; width: 180px; height: 135px; cursor: pointer;
+  background: color-mix(in srgb, var(--panel) 90%, transparent); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.15); }
+.minimap[hidden] { display: none; }
+@media (max-width: 600px) { .minimap { width: 120px; height: 90px; } }
 .board { overflow-x: auto; }
 .board:empty { display: none; }
 .board table { width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; border-collapse: separate;
@@ -66,6 +71,12 @@ button.icon { border: none; background: none; padding: 0 4px; color: var(--muted
 .board th { color: var(--muted); font-weight: 500; }
 .board td.name, .board th:nth-child(2) { text-align: left; width: 100%; max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
 .tag { font-size: 10px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 3px; }
+
+.stage { display: flex; flex-direction: column; gap: 10px; }
+/* full screen: the map takes whatever the controls and leaderboard leave */
+.stage:fullscreen { background: var(--bg); padding: 12px; box-sizing: border-box; height: 100vh; }
+.stage:fullscreen .map-wrap { flex: 1; height: auto; min-height: 0; }
+.stage:fullscreen .board { flex: none; max-height: 35vh; overflow-y: auto; }
 
 .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 #time { flex: 1; min-width: 160px; accent-color: var(--accent-bg); }

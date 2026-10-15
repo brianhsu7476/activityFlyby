@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Flyby 比較器</title>
+<title>Ghost Flyby</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header>
-  <h1>Flyby 比較器</h1>
-  <p>上傳多個 GPX / FIT / TCX 檔（可為 .gz），在同一張地圖上重播，比較誰快誰慢。檔案只在你的瀏覽器裡處理，不會上傳到伺服器。</p>
+  <h1>Ghost Flyby</h1>
+  <p>和不同時間騎同一條路的自己或別人，以幽靈車手的身分同場重騎：在同一個起點同時出發，看誰先過終點。上傳 GPX / FIT / TCX 檔（可為 .gz），檔案只在你的瀏覽器裡處理，不會上傳到伺服器。</p>
 </header>
 
 <div class="layout">
@@ -49,19 +49,22 @@
   </aside>
 
   <main>
+    <div id="stage" class="stage">
     <div class="map-wrap">
       <div id="map"></div>
+      <canvas id="minimap" class="minimap" title="全部路線與目前畫面範圍；點一下跳到該處" hidden></canvas>
     </div>
     <div class="controls">
       <button id="play" class="primary">▶ 播放</button>
       <input id="time" type="range" min="0" max="0" step="1" value="0">
       <span id="timeLabel" class="time-label">0:00</span>
       <select id="speed" title="播放速度"></select>
-      <label class="check" title="地圖平滑移動並縮放，讓所有人都在畫面內；拖曳或滾輪縮放地圖會關閉"><input id="spectate" type="checkbox"> 觀賽模式</label>
-      <label class="check"><input id="follow" type="checkbox"> 跟隨領先者</label>
+      <label class="check" title="地圖平滑移動並縮放，讓所有人都在畫面內；拖曳或滾輪縮放地圖會關閉"><input id="spectate" type="checkbox" checked> 觀賽模式</label>
       <button id="fit" class="small">縮放到全部路線</button>
+      <button id="fullscreen" class="small" title="地圖、播放控制與排行榜一起全螢幕">全螢幕</button>
     </div>
     <div id="board" class="board"></div>
+    </div>
     <div class="charts">
       <canvas id="gapChart"></canvas>
       <canvas id="eleChart"></canvas>

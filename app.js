@@ -1,4 +1,4 @@
-// Flyby comparer: overlay several activities and replay them on a shared clock.
+// Ghost Flyby: overlay activities ridden at different times and replay them on a shared clock.
 // Activity elapsed time e_i = T + off_i + adj_i, where off_i comes from the
 // auto alignment mode and adj_i from the activity's manual slider.
 
@@ -18,8 +18,7 @@ const state = {
   T: 0, Tmin: 0, Tmax: 0,
   playing: false,
   speed: 30,
-  follow: false,
-  spectate: false,     // camera keeps every rider in view, gliding smoothly
+  spectate: true,      // camera keeps every rider in view, gliding smoothly (default on)
   startInfo: '',
   nextId: 1,
 };
@@ -441,7 +440,6 @@ function rebuildLayers() {
 
 function updateMap() {
   if (!map) return;
-  let leader = null, leadD = -Infinity;
   for (const a of state.acts) {
     const l = layers.get(a.id);
     if (!l || !a.visible) continue;
@@ -449,15 +447,6 @@ function updateMap() {
     const s = sampleAt(a, e);
     l.marker.setLatLng([s.lat, s.lon]);
     if (l.status !== s.status) { l.status = s.status; l.marker.setStyle({ fillOpacity: s.status === 'riding' ? 1 : 0.4 }); }
-    if (s.rd > leadD) { leadD = s.rd; leader = s; }
-  }
-  // Re-centre only when the leader nears the edge: panning every frame forces the
-  // map (tiles and every track) to redraw on every frame.
-  if (state.follow && leader && !state.spectate) {
-    const p = map.latLngToContainerPoint([leader.lat, leader.lon]), size = map.getSize();
-    if (p.x < size.x * 0.2 || p.x > size.x * 0.8 || p.y < size.y * 0.2 || p.y > size.y * 0.8) {
-      map.panTo([leader.lat, leader.lon], { animate: false });
-    }
   }
 }
 
@@ -551,11 +540,85 @@ function setSpectate(on) {
   if (!map) return;
   map.options.zoomSnap = state.spectate ? 0 : 1; // fractional zoom so the camera can glide
   if (state.spectate) {
-    if (state.follow) { state.follow = false; $('#follow').checked = false; }
     cam = { lat: map.getCenter().lat, lon: map.getCenter().lng, zoom: map.getZoom(), t: performance.now() };
     if (!camFrame) camFrame = requestAnimationFrame(camTick);
   } else {
     map.setZoom(Math.round(map.getZoom()), { animate: false });
+  }
+}
+
+// ---------- minimap ----------
+// Overview in the map's corner: every route, every rider, and a frame around the part of the
+// map currently shown. Plain canvas (no tiles), so redrawing it every frame is cheap.
+const mercX = lon => (lon + 180) / 360;
+const mercY = lat => (1 - Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) / Math.PI) / 2;
+let mm = { key: null, img: null, fit: null };
+
+function minimapFit(vis, w, h) {
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const a of vis) {
+    for (let i = 0; i < a.n; i += 10) {
+      const x = mercX(a.lon[i]), y = mercY(a.lat[i]);
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+    }
+  }
+  const pad = 8, s = Math.min((w - 2 * pad) / Math.max(x1 - x0, 1e-9), (h - 2 * pad) / Math.max(y1 - y0, 1e-9));
+  const ox = (w - (x1 - x0) * s) / 2, oy = (h - (y1 - y0) * s) / 2;
+  return {
+    toPx: (lat, lon) => [ox + (mercX(lon) - x0) * s, oy + (mercY(lat) - y0) * s],
+    toLatLng: (px, py) => {
+      const x = (px - ox) / s + x0, y = (py - oy) / s + y0;
+      return [Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180 / Math.PI, x * 360 - 180];
+    },
+  };
+}
+
+function drawMinimap() {
+  const canvas = $('#minimap');
+  const vis = state.acts.filter(a => a.visible);
+  canvas.hidden = !map || !vis.length;
+  if (canvas.hidden) return;
+  const { ctx, w, h } = setupCanvas(canvas);
+  const key = `${vis.map(a => a.id).join()}|${w}x${h}|${colors().text}`;
+  if (mm.key !== key) { // routes change only with the activity set, size or theme
+    const dpr = window.devicePixelRatio || 1, img = document.createElement('canvas');
+    img.width = Math.round(w * dpr); img.height = Math.round(h * dpr);
+    const g = img.getContext('2d');
+    g.scale(dpr, dpr);
+    mm.fit = minimapFit(vis, w, h);
+    g.lineWidth = 1.5; g.globalAlpha = 0.7; g.lineJoin = 'round';
+    for (const a of vis) {
+      g.strokeStyle = a.color; g.beginPath();
+      const step = Math.max(1, Math.floor(a.n / 1500));
+      for (let i = 0; i < a.n; i += step) {
+        const [x, y] = mm.fit.toPx(a.lat[i], a.lon[i]);
+        i ? g.lineTo(x, y) : g.moveTo(x, y);
+      }
+      g.stroke();
+    }
+    mm = { key, img, fit: mm.fit };
+  }
+  ctx.drawImage(mm.img, 0, 0, w, h);
+  for (const a of vis) {
+    const s = sampleAt(a, elapsed(a, state.T));
+    const [x, y] = mm.fit.toPx(s.lat, s.lon);
+    ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = a.color; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
+  }
+  // the part of the map currently shown, drawn over the riders; when zoomed in far it is tiny,
+  // so it gets a minimum size and crosshair ticks to stay findable
+  const b = map.getBounds();
+  const [xa, ya] = mm.fit.toPx(b.getNorth(), b.getWest()), [xb, yb] = mm.fit.toPx(b.getSouth(), b.getEast());
+  const cx = (xa + xb) / 2, cy = (ya + yb) / 2, rw = Math.max(xb - xa, 12), rh = Math.max(yb - ya, 12);
+  ctx.strokeStyle = colors().text; ctx.lineWidth = 1.5;
+  ctx.strokeRect(cx - rw / 2, cy - rh / 2, rw, rh);
+  if (rw < 30 && rh < 30) {
+    ctx.beginPath();
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      ctx.moveTo(cx + dx * (rw / 2 + 2), cy + dy * (rh / 2 + 2));
+      ctx.lineTo(cx + dx * (rw / 2 + 9), cy + dy * (rh / 2 + 9));
+    }
+    ctx.stroke();
   }
 }
 
@@ -867,6 +930,7 @@ function render() {
   setText($('#play'), state.playing ? '❚❚ 暫停' : '▶ 播放');
   if (state.playing && state.spectate) camStep(performance.now());
   updateMap();
+  drawMinimap();
   const now = performance.now();
   if (!state.playing || now - lastBoard >= BOARD_MS) { lastBoard = now; updateBoard(); }
   drawGapChart(); drawEleChart();
@@ -959,12 +1023,8 @@ function init() {
   $('#mode').addEventListener('change', e => { state.mode = e.target.value; fullRefresh(true); state.T = state.mode === 'point' ? 0 : state.Tmin; render(); });
   $('#refSelect').addEventListener('change', e => { state.refId = Number(e.target.value); fullRefresh(true); });
   $('#resetAll').addEventListener('click', () => { state.acts.forEach(a => { a.adj = 0; }); fullRefresh(true); });
-  $('#follow').addEventListener('change', e => {
-    state.follow = e.target.checked;
-    if (state.follow && state.spectate) setSpectate(false);
-    render();
-  });
   $('#spectate').addEventListener('change', e => setSpectate(e.target.checked));
+  setSpectate(state.spectate);
   // grabbing the map hands control back to the viewer
   if (map) {
     map.on('dragstart', () => { if (state.spectate) setSpectate(false); });
@@ -972,7 +1032,30 @@ function init() {
       el.addEventListener(el === map.getContainer() ? 'wheel' : 'click', () => { if (state.spectate) setSpectate(false); }, { passive: true });
     }
   }
-  $('#fit').addEventListener('click', () => rebuildLayers());
+  $('#fit').addEventListener('click', () => { setSpectate(false); rebuildLayers(); });
+  if (map) {
+    map.on('move zoom', drawMinimap); // the camera or the viewer moved the map
+    $('#minimap').addEventListener('click', e => { // jump there; the viewer takes over the camera
+      if (!mm.fit) return;
+      const r = e.currentTarget.getBoundingClientRect();
+      setSpectate(false);
+      map.panTo(mm.fit.toLatLng(e.clientX - r.left, e.clientY - r.top));
+    });
+  }
+  // full screen: map, playback controls and leaderboard together
+  const stage = $('#stage');
+  if (stage.requestFullscreen) {
+    $('#fullscreen').addEventListener('click', () => {
+      document.fullscreenElement ? document.exitFullscreen() : stage.requestFullscreen().catch(() => {});
+    });
+    document.addEventListener('fullscreenchange', () => {
+      setText($('#fullscreen'), document.fullscreenElement ? '離開全螢幕' : '全螢幕');
+      if (map) map.invalidateSize({ animate: false });
+      canvasSize.clear(); render();
+    });
+  } else {
+    $('#fullscreen').hidden = true;
+  }
   $('#play').addEventListener('click', togglePlay);
   $('#time').addEventListener('input', e => { state.T = Number(e.target.value); render(); });
   $('#acts').addEventListener('input', onListEvent);
